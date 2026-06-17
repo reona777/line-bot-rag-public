@@ -30,12 +30,23 @@ function doPost(e) {
 
   var isParent = (data.destination === PARENT_BOT_USER_ID);
   var token    = isParent ? LINE_TOKEN_PARENT : LINE_TOKEN_STUDENT;
+  var cache    = CacheService.getScriptCache();
 
   data.events.forEach(function(event) {
     if (event.type !== 'message' || event.message.type !== 'text') return;
     var userId  = event.source.userId;
     var message = event.message.text || '';
     if (!message.trim().startsWith('質問')) return;
+
+    var evtKey  = 'rag_evt_' + event.webhookEventId;
+    if (cache.get(evtKey)) return;
+    cache.put(evtKey, '1', 60);
+
+    var rateKey = 'rag_rate_' + userId;
+    var count   = parseInt(cache.get(rateKey) || '0');
+    if (count >= 5) return;
+    cache.put(rateKey, String(count + 1), 3600);
+
     var answer = getRagAnswer_(message);
     safeLinePush(userId, answer, token);
   });
@@ -55,6 +66,7 @@ function getRagAnswer_(userMessage) {
 
     var topChunks = getTopK_(queryEmb, chunks, 5);
     Logger.log('RAG top chunk: ' + topChunks[0].text.substring(0, 80) + ' (sim=' + topChunks[0].sim.toFixed(3) + ')');
+    if (topChunks[0].sim < 0.5) return '校舎にお問い合わせください。';
 
     var context = topChunks.map(function(c) { return c.text; }).join('\n\n---\n\n');
     return askGeminiWithContext_(userMessage, context);
@@ -69,7 +81,7 @@ function embedText_(text) {
   var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent';
   var options  = {
     method: 'post', contentType: 'application/json',
-    payload: JSON.stringify({ content: { parts: [{ text: text }] } }),
+    payload: JSON.stringify({ content: { parts: [{ text: text }] }, taskType: 'RETRIEVAL_QUERY' }),
     muteHttpExceptions: true,
   };
   try {
@@ -86,7 +98,10 @@ function embedText_(text) {
 function loadEmbeddings_() {
   try {
     var file = DriveApp.getFileById(EMBEDDINGS_FILE_ID);
-    return JSON.parse(file.getBlob().getDataAsString('UTF-8'));
+    var chunks   = JSON.parse(file.getBlob().getDataAsString('UTF-8'));
+    var filtered = chunks.filter(function(c) { return c.audience === 'public'; });
+    Logger.log('loadEmbeddings_: total=' + chunks.length + ' public=' + filtered.length + ' excluded=' + (chunks.length - filtered.length));
+    return filtered;
   } catch (e) {
     Logger.log('loadEmbeddings_エラー: ' + e);
     return null;
