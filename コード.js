@@ -66,7 +66,7 @@ function getRagAnswer_(userMessage) {
 
     var topChunks = getTopK_(queryEmb, chunks, 5);
     Logger.log('RAG top chunk: ' + topChunks[0].text.substring(0, 80) + ' (sim=' + topChunks[0].sim.toFixed(3) + ')');
-    if (topChunks[0].sim < 0.5) return '校舎にお問い合わせください。';
+    if (topChunks[0].sim < 0.6) return '校舎にお問い合わせください。';
 
     var context = topChunks.map(function(c) { return c.text; }).join('\n\n---\n\n');
     return askGeminiWithContext_(userMessage, context);
