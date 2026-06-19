@@ -38,9 +38,8 @@ function doPost(e) {
     var message = event.message.text || '';
     if (!message.trim().startsWith('質問')) return;
 
-    var evtKey  = 'rag_evt_' + event.webhookEventId;
-    if (cache.get(evtKey)) return;
-    cache.put(evtKey, '1', 60);
+    var evtKey = event.webhookEventId ? 'rag_evt_' + event.webhookEventId : null;
+    if (evtKey && cache.get(evtKey)) return;
 
     var rateKey = 'rag_rate_' + userId;
     var count   = parseInt(cache.get(rateKey) || '0');
@@ -49,6 +48,7 @@ function doPost(e) {
 
     var answer = getRagAnswer_(message);
     safeLinePush(userId, answer, token);
+    if (evtKey) cache.put(evtKey, '1', 60);
   });
 
   return ContentService.createTextOutput('OK');
